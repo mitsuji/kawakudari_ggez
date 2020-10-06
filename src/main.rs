@@ -1,9 +1,12 @@
 use ggez::event;
 use rand::Rng;
+use rand::rngs::ThreadRng;
+use kawakudari_ggez::Direction;
 use kawakudari_ggez::Std15;
 
 struct MainState {
     std15: Std15,
+    rng: ThreadRng,
     x: i32,
     running : bool,
 }
@@ -12,6 +15,7 @@ impl MainState {
     fn new() -> MainState {
         MainState {
             std15 : Std15::new(512, 384, 32, 24),
+            rng : rand::thread_rng(),
             x : 15,
             running : true,
         }
@@ -33,24 +37,22 @@ impl event::EventHandler for MainState {
     fn update(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
         while ggez::timer::check_update_time(ctx, 60) {
             if self.running {
-                if ggez::timer::ticks(ctx) % 5 == 0 {
-                    let mut rng = rand::thread_rng();
+                let tick = ggez::timer::ticks(ctx) as usize;
+                if tick % 5 == 0 {
                     self.std15.locate(self.x,5);
                     self.std15.putc('0');
-                    self.std15.locate(rng.gen_range(0, 32),23);
+                    self.std15.locate(self.rng.gen_range(0, 32),23);
                     self.std15.putc('*');
-                    self.std15.scroll();
+                    self.std15.scroll(Direction::Up);
                     if self.std15.scr(self.x,5) != '\0' {
+                        self.std15.locate(0,23);
+                        self.std15.putstr("Game Over...");
+                        self.std15.putnum(tick as i32);
                         self.running = false;
                     }
                 }
             }
         }
-        Ok(())
-    }
-
-    fn draw(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
-        self.std15.papplet_draw(ctx)?;
         Ok(())
     }
 
@@ -61,6 +63,10 @@ impl event::EventHandler for MainState {
         if keycode == event::KeyCode::Right {
             self.x += 1
         }
+    }
+
+    fn draw(&mut self, ctx: &mut ggez::Context) -> ggez::GameResult {
+        self.std15.draw_screen(ctx)
     }
 
 }
