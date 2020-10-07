@@ -1,26 +1,38 @@
 use ggez::graphics;
 
-    
-const CHAR_SX:i32 = 8;
-const CHAR_SY:i32 = 8;
+const CHAR_W:i32 = 8;
+const CHAR_H:i32 = 8;
+
+pub enum Direction {
+    Up,
+    Right,
+    Down,
+    Left,
+}
 
 pub struct Std15 {
-    pub cb_sx: i32,
-    pub cb_sy: i32,
-    pub cb_unit: f32,
-    pub char_buff: Vec<char>,
+    pub screen_w: i32,
+    pub screen_h: i32,
+    pub buff_w: i32,
+    pub buff_h: i32,
+    pub dot_w: f32,
+    pub dot_h: f32,
+    pub buff: Vec<char>,
     pub cursor_x: i32,
     pub cursor_y: i32,
 }
 
 
 impl Std15 {
-    pub fn new(screen_sx:i32, _screen_sy:i32, cb_sx:i32, cb_sy:i32) -> Self {
+    pub fn new(screen_w:i32, screen_h:i32, buff_w:i32, buff_h:i32) -> Self {
         Std15 {
-            cb_sx: cb_sx,
-            cb_sy: cb_sy,
-            cb_unit: screen_sx as f32 / cb_sx as f32 / 8.0,
-	    char_buff: vec!['\0'; (cb_sx * cb_sy) as usize],
+            screen_w: screen_w,
+            screen_h: screen_h,
+            buff_w: buff_w,
+            buff_h: buff_h,
+            dot_w: screen_w as f32 / buff_w as f32 / CHAR_W as f32,
+            dot_h: screen_h as f32 / buff_h as f32 / CHAR_H as f32,
+	    buff: vec!['\0'; (buff_w * buff_h) as usize],
             cursor_x: 0,
             cursor_y: 0,
         }
@@ -31,77 +43,133 @@ impl Std15 {
         self.cursor_y = y;
     }
     
-    pub fn putc_loc(&mut self, x:i32, y:i32, c:char) -> () {
-    	self.char_buff[(y * self.cb_sx + x) as usize] = c
-    }
-    
     pub fn putc(&mut self, c:char) -> () {
-    	self.putc_loc(self.cursor_x,self.cursor_y,c)
+        self.set_char(self.cursor_x,self.cursor_y,c);
+        if self.cursor_x < self.buff_w-1 {
+          self.cursor_x +=1;
+        } else {
+          if self.cursor_y < self.buff_h-1 {
+            self.cursor_x = 0;
+            self.cursor_y +=1;
+          }
+        }
+    }
+
+    pub fn putstr(&mut self, s:&str) -> () {
+        for c in s.chars() {
+          self.putc(c)
+        }
+    }
+
+    pub fn putnum(&mut self, n:i32) -> () {
+        self.putstr(&n.to_string())
     }
     
     pub fn scr(& self, x:i32, y:i32) -> char {
-    	self.char_buff[(y * self.cb_sx + x) as usize]
+        self.buff[(y * self.buff_w + x) as usize]
     }
 
     pub fn cls(&mut self) -> () {
-    	for y in 0..self.cb_sy {
-	  for x in 0..self.cb_sx {
-    	    self.char_buff[(y * self.cb_sx + x) as usize] = '\0'
-	  }
-	}
+        for y in 0..self.buff_h {
+          for x in 0..self.buff_w {
+            self.set_char(x,y,'\0')
+          }
+        }
     }
 
-    pub fn scroll(&mut self) -> () {
-    	for y in 0..self.cb_sy {
-	  for x in 0..self.cb_sx {
-	    if y == self.cb_sy -1 {
-    	      self.char_buff[(y * self.cb_sx + x) as usize] = '\0'
-	    } else {
-    	      self.char_buff[(y * self.cb_sx + x) as usize] =
-	      	      self.char_buff[((y+1) * self.cb_sx + x) as usize]
-	    }
-	  }
-	}
+    pub fn scroll(&mut self, dir:Direction) -> () {
+      for y in 0..self.buff_h {
+        for x in 0..self.buff_w {
+	  match dir {
+              Direction::Up =>
+                if y == self.buff_h -1 {
+                  self.set_char(x,y,'\0')
+                } else {
+                  self.set_char(x,y,self.scr(x,y+1))
+                }
+              Direction::Right =>
+                if x == self.buff_w -1 {
+                  self.set_char(self.buff_w-x-1,y,'\0')
+                } else {
+                  self.set_char(self.buff_w-x-1,y,self.scr((self.buff_w-x-1)-1,y))
+                }
+              Direction::Down =>
+                if y == self.buff_h -1 {
+                  self.set_char(x,self.buff_h-y-1,'\0')
+                } else {
+                  self.set_char(x,self.buff_h-y-1,self.scr(x,(self.buff_h-y-1)-1))
+                }
+              Direction::Left =>
+                if x == self.buff_w -1 {
+                  self.set_char(x,y,'\0')
+                } else {
+                  self.set_char(x,y,self.scr(x+1,y))
+                }
+          }
+        }
+      }
     }
 
-    pub fn mapchar(&self, mesh_builder: &mut graphics::MeshBuilder, has_mesh:&mut bool, cx:i32, cy:i32, c:char) -> ggez::GameResult {
-        let glyph = FONT[c as usize];
-    	for y in 0..CHAR_SY {
-	    let line = (glyph >> ((CHAR_SY-y-1)*CHAR_SX)) & 0xff;
-	    for x in 0..CHAR_SX {
-	        if ((line >> (CHAR_SX-x-1)) & 0x1) == 0x1 {
-                    let x0 = ((cx * CHAR_SX + x) as f32) * self.cb_unit;
-                    let y0 = ((cy * CHAR_SY + y) as f32) * self.cb_unit;
-                    let rect = graphics::Rect::new(x0, y0, self.cb_unit, self.cb_unit);
+    pub fn pset(&mut self, x:i32, y:i32) -> () {
+        let cx = x / 2;
+        let cy = y / 2;
+        let c = self.scr(cx,cy) as u8;
+        let b = 2i64.pow((((y%2) << 1) + (x%2)) as u32);
+        let d = (if (c & 0xf0) == 0x80 { c } else { 0x80 }) | ( b as u8);
+        self.set_char(cx, cy, d as char)
+    }
+
+    pub fn set_char(&mut self, x:i32, y:i32, c:char) -> () {
+        self.buff[(y * self.buff_w + x) as usize] = c
+    }
+
+    pub fn draw_char(&self, mesh_builder: &mut graphics::MeshBuilder, cx:i32, cy:i32, c:char) -> bool {
+        let mut result = false;
+        let glyph = ICHIGOJAM_FONT[c as usize];
+        for y in 0..CHAR_H {
+	    let line = (glyph >> ((CHAR_H-y-1)*CHAR_W)) & 0xff;
+	    for x in 0..CHAR_W {
+	        if ((line >> (CHAR_W-x-1)) & 0x1) == 0x1 {
+                    let x0 = ((cx * CHAR_W + x) as f32) * self.dot_w;
+                    let y0 = ((cy * CHAR_H + y) as f32) * self.dot_h;
+//                    println!("x0:{} y0:{} x1:{} y1:{}", x0, y0, self.dot_w, self.dot_h);
+                    let rect = graphics::Rect::new(x0, y0, self.dot_w, self.dot_h);
                     mesh_builder.rectangle(graphics::DrawMode::fill(), rect, graphics::WHITE);
-                    *has_mesh = true;
+                    result = true;
 	        }
 	    }
 	}
-        Ok(())
+        result
     }
     
-    pub fn papplet_draw(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
+    pub fn draw_screen(&self, ctx: &mut ggez::Context) -> ggez::GameResult {
         graphics::clear(ctx, graphics::BLACK);
         let mut mesh_builder = graphics::MeshBuilder::new();
         let mut has_mesh = false;
-    	for y in 0..self.cb_sy {
-	    for x in 0..self.cb_sx {
-                self.mapchar(&mut mesh_builder, &mut has_mesh, x, y, self.char_buff[(y * self.cb_sx + x) as usize])?;
+        for y in 0..self.buff_h {
+	    for x in 0..self.buff_w {
+                if self.draw_char(&mut mesh_builder, x, y, self.scr(x,y)) {
+                    has_mesh = true
+                }
 	    }
 	}
         if has_mesh {
             let mesh = mesh_builder.build(ctx)?;
             graphics::draw(ctx, &mesh, graphics::DrawParam::new())?;
         }
-        graphics::present(ctx)?;
-        Ok(())
+        graphics::present(ctx)
     }
 
 }
 
 
-static FONT: [u64; 0x100] = [
+/**
+ *
+ *  CC BY IchigoJam & mitsuji.org
+ *  https://mitsuji.github.io/ichigojam-font.json/
+ *
+ */
+static ICHIGOJAM_FONT: [u64; 0x100] = [
     0x0000000000000000,
     0xffffffffffffffff,
     0xffaaff55ffaaff55,
